@@ -1,4 +1,11 @@
 <?php
+    ini_set('display_errors', 1);
+    ini_set('display_startup_errors', 1);
+    error_reporting(E_ALL);
+
+    // https://stackoverflow.com/questions/45238419/how-to-query-github-graphql-api-from-php-script
+    // USE THIS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     define('GITHUB_USER', '<user>');
     define('GITHUB_TOKEN', '<token>');
 
@@ -28,6 +35,21 @@
         curl_close($ch);
     }
 
+    function thousandsFormat($num) {
+        if($num > 1000) {
+              $x = round($num);
+              $x_number_format = number_format($x);
+              $x_array = explode(',', $x_number_format);
+              $x_parts = array('k', 'm', 'b', 't');
+              $x_count_parts = count($x_array) - 1;
+              $x_display = $x;
+              $x_display = $x_array[0] . ((int) $x_array[1][0] !== 0 ? '.' . $x_array[1][0] : '');
+              $x_display .= $x_parts[$x_count_parts - 1];
+              return $x_display;
+        }
+        return $num;
+      }
+
     function getData($api, $username) {
         $user = apiGet($api, "users/{$username}");
 
@@ -40,41 +62,42 @@
         $output['htmlUrl'] = $user['html_url'];
         $output['publicRepos'] = $user['public_repos'];
         $output['followers'] = $user['followers'];
-        $output['commitCount'] = apiGet($api, "search/commits?q=author:{$username}&per_page=1")['total_count'];
+        $output['commitCount'] = apiGet($api, "search/commits?q=author:{$username}")['total_count']; // WRONG!!
+        $repos = apiGet($api, "users/{$username}");
 
         return $output;
     }
 
     function createImage($data, $width = 300, $height = 70) {
-        $font_arial = __DIR__ . '/arial.ttf';
+        $image = new Imagick();
+        $draw = new ImagickDraw();
 
-        $image = imagecreate($width, $height);
+        $image->newImage($width, $height, new ImagickPixel('#1c1c1c'));
 
-        $avatar = imagecreatefromstring(file_get_contents($data['avatarUrl']));
-        $avatar =  imagescale($avatar, $height, $height, IMG_BICUBIC_FIXED);
+        $avatar = new Imagick($data['avatarUrl']);
+        $avatar->scaleImage($height, $height);
 
-        $color_white = imagecolorallocate($image, 255, 255, 255);
-        $color_dark_gray = imagecolorallocate($image, 28, 28, 28);
+        $image->compositeImage($avatar, Imagick::COMPOSITE_OVER, 0, 0);
 
-        imagefill($image, 0, 0, $color_dark_gray);
+        $draw->setFont('arial.ttf');
+        $draw->setFontSize(15);
+        $draw->setFillColor('#fff');
 
-        imagecopymerge($image, $avatar, 0, 0, 0, 0, $height, $height, 100);
+        $image->annotateImage($draw, $height + 7, 17, 0, $data['name']);
+        $draw->setFontSize(12);
+        $image->annotateImage($draw, $height + 7, 37, 0, "Follower: " . thousandsFormat($data['followers']));
+        $image->annotateImage($draw, $height + 7, 52, 0, "Commits: " . thousandsFormat($data['commitCount']));
+        $image->annotateImage($draw, $height + 7, 65, 0, "Repos: " . thousandsFormat($data['publicRepos']));
 
-        imagettftext($image, 12, 0, $height + 5, 17, $color_white, $font_arial, $data['name']);
-        imagettftext($image, 8, 0, $height + 5, 45, $color_white, $font_arial, "Commits: " . number_format($data['commitCount'], 0, ".", "'"));
-        imagettftext($image, 8, 0, $height + 5, 55, $color_white, $font_arial, "Repos: " . number_format($data['publicRepos'], 0, ".", "'"));
-        imagettftext($image, 8, 0, $height + 5, 65, $color_white, $font_arial, "Follower: " . number_format($data['followers'], 0, ".", "'"));
-
+        $image->setImageFormat('png');
         return $image;
     }
 
     function displayImage($image) {
         header('Content-Type: image/png');
-        imagepng($image);
-    
-        imagedestroy($image);
+        echo $image;
     }
 
     $data = getData($api, $username);
     $image = createImage($data);
-    displayImage($image);
+   displayImage($image);
