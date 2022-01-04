@@ -1,17 +1,6 @@
-<?php
-    ini_set('display_errors', 1);
-    ini_set('display_startup_errors', 1);
-    error_reporting(E_ALL);
-
-    // https://stackoverflow.com/questions/45238419/how-to-query-github-graphql-api-from-php-script
-    // USE THIS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+<?php 
     define('GITHUB_USER', '<user>');
     define('GITHUB_TOKEN', '<token>');
-
-    $api = 'https://api.github.com/';
-
-    $output = [];
 
     if(!isset($_GET['username'])) {
         die('please enter a username! [GET / username]');
@@ -19,13 +8,17 @@
         $username = htmlentities($_GET['username'], ENT_QUOTES);
     }
 
-    function apiGet($url, $path) {
+    function callApi($query, $variables) {
+        $json = json_encode(['query' => $query, 'variables' => $variables]);
+        
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url . $path);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
+        curl_setopt($ch, CURLOPT_URL, 'https://api.github.com/graphql');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
         curl_setopt($ch, CURLOPT_USERPWD, GITHUB_USER . ':' . GITHUB_TOKEN);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.7113.93 Safari/537.36');
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'bitsflipped.ch - badges - BOT');
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Accept: application/json'));
         $result = curl_exec($ch);
         if (curl_errno($ch)) {
             return 'Error: ' . curl_error($ch);
@@ -33,10 +26,67 @@
             return json_decode($result, true);
         }
         curl_close($ch);
+
+        return $result;
+    }
+
+    function getData($username) {
+        $query = '
+        query userData($login: String!){
+            user(login: $login) {
+                name
+                login
+                avatarUrl
+                createdAt
+                databaseId
+                contributionsCollection {
+                    totalCommitContributions
+                    restrictedContributionsCount
+                }
+                repositoriesContributedTo(first: 1, contributionTypes: [COMMIT, ISSUE, PULL_REQUEST, REPOSITORY]) {
+                    totalCount
+                }
+                repositories(first: 100, ownerAffiliations: OWNER, orderBy: {direction: DESC, field: STARGAZERS}) {
+                    totalCount
+                    nodes {
+                        stargazers {
+                            totalCount
+                        }
+                    }
+                }
+                followers {
+                    totalCount
+                }
+            }
+        }
+        ';
+
+        $variables = json_encode(['login' => $username]);
+
+        $data = callApi($query, $variables);
+
+        if(!$data['data']['user']) {
+            die('Username not found!');
+        }
+        
+        $data = $data['data']['user'];
+
+        $output['avatarUrl'] = $data['avatarUrl'];
+        $output['name'] = $data['name'] == null ? $data['login'] : $data['name'];
+        $output['publicRepos'] = $data['repositories']['totalCount'];
+        $output['followers'] = $data['followers']['totalCount'];
+        $output['commitCount'] = $data['contributionsCollection']['totalCommitContributions'];
+        $stars = 0;
+        foreach($data['repositories']['nodes'] as $repo) {
+            $stars += $repo['stargazers']['totalCount'];
+        }
+        $output['stars'] = $stars;
+
+        return $output;
     }
 
     function thousandsFormat($num) {
-        if($num > 1000) {
+        if($num>1000) {
               $x = round($num);
               $x_number_format = number_format($x);
               $x_array = explode(',', $x_number_format);
@@ -48,36 +98,31 @@
               return $x_display;
         }
         return $num;
-      }
-
-    function getData($api, $username) {
-        $user = apiGet($api, "users/{$username}");
-
-        if(isset($user['message'])) {
-            die('user does not exist!');
-        }
-
-        $output['avatarUrl'] = $user['avatar_url'];
-        $output['name'] = $user['name'] == null ? $user['login'] : $user['name'];
-        $output['htmlUrl'] = $user['html_url'];
-        $output['publicRepos'] = $user['public_repos'];
-        $output['followers'] = $user['followers'];
-        $output['commitCount'] = apiGet($api, "search/commits?q=author:{$username}")['total_count']; // WRONG!!
-        $repos = apiGet($api, "users/{$username}");
-
-        return $output;
     }
 
     function createImage($data, $width = 300, $height = 70) {
         $image = new Imagick();
         $draw = new ImagickDraw();
 
-        $image->newImage($width, $height, new ImagickPixel('#1c1c1c'));
+        $image->newImage($width, $height, '#1c1c1c');
 
         $avatar = new Imagick($data['avatarUrl']);
         $avatar->scaleImage($height, $height);
 
+        $follower = new Imagick('assets/follower.png');
+        $follower->scaleImage(11, 11);
+        $follower->colorizeImage('#fff', 1, true);
+        $star = new Imagick('assets/star.png');
+        $star->scaleImage(11, 11);
+        $star->colorizeImage('#fff', 1, true);
+        $repo = new Imagick('assets/repo.png');
+        $repo->scaleImage(11, 11);
+        $repo->colorizeImage('#fff', 1, true);
+
         $image->compositeImage($avatar, Imagick::COMPOSITE_OVER, 0, 0);
+        $image->compositeImage($follower, Imagick::COMPOSITE_OVER, $height + 7, 27);
+        $image->compositeImage($star, Imagick::COMPOSITE_OVER, $height + 7, 42);
+        $image->compositeImage($repo, Imagick::COMPOSITE_OVER, $height + 7, 56);
 
         $draw->setFont('arial.ttf');
         $draw->setFontSize(15);
@@ -85,9 +130,9 @@
 
         $image->annotateImage($draw, $height + 7, 17, 0, $data['name']);
         $draw->setFontSize(12);
-        $image->annotateImage($draw, $height + 7, 37, 0, "Follower: " . thousandsFormat($data['followers']));
-        $image->annotateImage($draw, $height + 7, 52, 0, "Commits: " . thousandsFormat($data['commitCount']));
-        $image->annotateImage($draw, $height + 7, 65, 0, "Repos: " . thousandsFormat($data['publicRepos']));
+        $image->annotateImage($draw, $height + 7 + 15, 37, 0, thousandsFormat($data['followers']) . ' Followers');
+        $image->annotateImage($draw, $height + 7 + 15, 52, 0, thousandsFormat($data['stars']) . ' Stars');
+        $image->annotateImage($draw, $height + 7 + 15, 65, 0, thousandsFormat($data['publicRepos']) . ' Repos');
 
         $image->setImageFormat('png');
         return $image;
@@ -98,6 +143,6 @@
         echo $image;
     }
 
-    $data = getData($api, $username);
+    $data = getData($username);
     $image = createImage($data);
-   displayImage($image);
+    displayImage($image);
