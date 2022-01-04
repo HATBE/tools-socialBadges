@@ -124,7 +124,7 @@
         $image->compositeImage($star, Imagick::COMPOSITE_OVER, $height + 7, 42);
         $image->compositeImage($repo, Imagick::COMPOSITE_OVER, $height + 7, 56);
 
-        $draw->setFont('arial.ttf');
+        $draw->setFont('assets/arial.ttf');
         $draw->setFontSize(15);
         $draw->setFillColor('#fff');
 
