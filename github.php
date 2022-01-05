@@ -68,7 +68,6 @@
         if(!$data['data']['user']) {
             die('Username not found!');
         }
-        
         $data = $data['data']['user'];
 
         $output['avatarUrl'] = $data['avatarUrl'];
@@ -120,7 +119,7 @@
         $repo->colorizeImage('#fff', 1, true);
 
         $image->compositeImage($avatar, Imagick::COMPOSITE_OVER, 0, 0);
-        $image->compositeImage($follower, Imagick::COMPOSITE_OVER, $height + 7, 27);
+        $image->compositeImage($follower, Imagick::COMPOSITE_OVER, $height + 7, 28);
         $image->compositeImage($star, Imagick::COMPOSITE_OVER, $height + 7, 42);
         $image->compositeImage($repo, Imagick::COMPOSITE_OVER, $height + 7, 56);
 
@@ -130,9 +129,24 @@
 
         $image->annotateImage($draw, $height + 7, 17, 0, $data['name']);
         $draw->setFontSize(12);
-        $image->annotateImage($draw, $height + 7 + 15, 37, 0, thousandsFormat($data['followers']) . ' Followers');
-        $image->annotateImage($draw, $height + 7 + 15, 52, 0, thousandsFormat($data['stars']) . ' Stars');
-        $image->annotateImage($draw, $height + 7 + 15, 65, 0, thousandsFormat($data['publicRepos']) . ' Repos');
+
+        $followersTxt = thousandsFormat($data['followers']);
+        $starsTxt = thousandsFormat($data['stars']);
+        $reposTxt = thousandsFormat($data['publicRepos']);
+
+        $followerLen = $image->queryFontMetrics($draw, $followersTxt)['textWidth'];
+        $starsLen = $image->queryFontMetrics($draw, $starsTxt)['textWidth'];
+        $reposLen = $image->queryFontMetrics($draw, $reposTxt)['textWidth'];
+
+        $width = max($followerLen, $starsLen, $reposLen);
+
+        $image->annotateImage($draw, $height + 22 + $width + 5, 37, 0, 'Followers');
+        $image->annotateImage($draw, $height + 22 + $width + 5, 51, 0, 'Stars');
+        $image->annotateImage($draw, $height + 22 + $width + 5, 65, 0, 'Repos');
+
+        $image->annotateImage($draw, $height + 22, 37, 0, $followersTxt);
+        $image->annotateImage($draw, $height + 22, 51, 0, $starsTxt);
+        $image->annotateImage($draw, $height + 22, 65, 0, $reposTxt);
 
         $image->setImageFormat('png');
         return $image;
